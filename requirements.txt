@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+pandas
+openpyxl
+python-multipart
+msoffcrypto-tool
+pyzipper

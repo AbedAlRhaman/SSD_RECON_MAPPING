@@ -1,0 +1,351 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>SP Recipient Payment Signature List Generator</title>
+  <style>
+    body { margin:0; font-family: Arial, sans-serif; background:#fafafa; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 22px; }
+    .card { background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:0 1px 2px rgba(0,0,0,0.04); }
+    .row { display:flex; gap:14px; flex-wrap:wrap; align-items:end; }
+    label { font-size:13px; color:#111827; font-weight:bold; }
+    input[type="text"], input[type="number"], select {
+      padding:8px 10px; border:1px solid #d1d5db; border-radius:10px; outline:none; min-height:36px; background:#fff;
+    }
+    input[type="file"] { margin-top:6px; }
+    button {
+      padding:9px 12px; border-radius:10px; border:1px solid #d1d5db;
+      background:#111827; color:#fff; cursor:pointer;
+    }
+    button.secondary { background:#fff; color:#111827; }
+    .msg { margin-top:10px; color:#374151; font-size:13px; white-space:pre-wrap; }
+    .muted { color:#6b7280; font-size:13px; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    table { width:100%; border-collapse: collapse; }
+    thead th {
+      background:#f3f4f6; border-bottom:1px solid #e5e7eb;
+      padding:10px; text-align:left; font-size:13px;
+    }
+    tbody td {
+      border-bottom:1px solid #eef2f7; padding:10px; vertical-align:top;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h2 style="margin:0 0 6px 0;">SP Recipient Payment Signature List Generator</h2>
+      <div class="muted">
+        Upload a payment instruction ZIP, select a group-by field, map the template fields, and download one ZIP containing one signature-list file per group.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div style="min-width:380px;">
+          <label>Payment instructions ZIP file</label><br/>
+          <input id="zipFile" type="file" accept=".zip" />
+        </div>
+
+        <div>
+          <label>Header row (1-based)</label><br/>
+          <input id="headerRow" type="number" value="2" min="1" style="width:160px;" />
+        </div>
+
+        <div>
+          <button id="btnLoadHeaders">Load headers</button>
+        </div>
+      </div>
+
+      <div id="msg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <label>Group by field</label><br/>
+          <select id="groupBy" style="width:280px;"></select>
+        </div>
+
+        <div>
+          <label>Output base file name</label><br/>
+          <input id="outputName" type="text" value="SP signature list" style="width:280px;" />
+        </div>
+
+        <div style="margin-left:auto;">
+          <button id="btnGenerate">Generate ZIP of files</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3 style="margin:0 0 10px 0;">Top section mappings</h3>
+        <div class="muted" style="margin-bottom:10px;">
+          These populate the top cells in the SP signature list template.
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Template field</th>
+              <th>Rule</th>
+              <th>Source column / value</th>
+            </tr>
+          </thead>
+          <tbody id="topMapBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 10px 0;">Table mappings</h3>
+        <div class="muted" style="margin-bottom:10px;">
+          These populate the table rows starting from row 6. Serial number is auto-filled.
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Template field</th>
+              <th>Rule</th>
+              <th>Source column / value</th>
+            </tr>
+          </thead>
+          <tbody id="tableMapBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const API = (window.location.port === "8000") ? window.location.origin : "http://127.0.0.1:8000";
+
+  const zipFile = document.getElementById("zipFile");
+  const headerRow = document.getElementById("headerRow");
+  const groupBy = document.getElementById("groupBy");
+  const outputName = document.getElementById("outputName");
+  const btnLoadHeaders = document.getElementById("btnLoadHeaders");
+  const btnGenerate = document.getElementById("btnGenerate");
+  const msg = document.getElementById("msg");
+
+  const topMapBody = document.getElementById("topMapBody");
+  const tableMapBody = document.getElementById("tableMapBody");
+
+  let paymentHeaders = [];
+  let topTargets = [];
+  let tableTargets = [];
+
+  function makeRuleSelect() {
+    const sel = document.createElement("select");
+    sel.innerHTML = `
+      <option value="copy">copy</option>
+      <option value="constant">constant</option>
+    `;
+    return sel;
+  }
+
+  function makeSourceSelect(options) {
+    const sel = document.createElement("select");
+    const opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = "(select column)";
+    sel.appendChild(opt0);
+
+    options.forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o;
+      opt.textContent = o;
+      sel.appendChild(opt);
+    });
+    return sel;
+  }
+
+  function renderMappings() {
+    topMapBody.innerHTML = "";
+    tableMapBody.innerHTML = "";
+
+    topTargets.forEach(t => {
+      topMapBody.appendChild(makeMappingRow(t.key, paymentHeaders));
+    });
+
+    tableTargets.forEach(t => {
+      tableMapBody.appendChild(makeMappingRow(t.key, paymentHeaders));
+    });
+  }
+
+  function makeMappingRow(targetKey, headers) {
+    const tr = document.createElement("tr");
+
+    const tdTarget = document.createElement("td");
+    tdTarget.textContent = targetKey;
+
+    const tdRule = document.createElement("td");
+    const ruleSel = makeRuleSelect();
+    ruleSel.style.width = "120px";
+    tdRule.appendChild(ruleSel);
+
+    const tdSource = document.createElement("td");
+
+    const sourceSel = makeSourceSelect(headers);
+    sourceSel.style.width = "220px";
+
+    const constInput = document.createElement("input");
+    constInput.type = "text";
+    constInput.placeholder = "constant value";
+    constInput.style.width = "220px";
+    constInput.style.display = "none";
+
+    ruleSel.onchange = () => {
+      if (ruleSel.value === "copy") {
+        sourceSel.style.display = "";
+        constInput.style.display = "none";
+      } else {
+        sourceSel.style.display = "none";
+        constInput.style.display = "";
+      }
+    };
+
+    tdSource.appendChild(sourceSel);
+    tdSource.appendChild(constInput);
+
+    tr.appendChild(tdTarget);
+    tr.appendChild(tdRule);
+    tr.appendChild(tdSource);
+
+    tr.dataset.targetKey = targetKey;
+    tr._ruleSel = ruleSel;
+    tr._sourceSel = sourceSel;
+    tr._constInput = constInput;
+
+    return tr;
+  }
+
+  function collectMappingsFromTable(tbody) {
+    const result = {};
+    const rows = Array.from(tbody.querySelectorAll("tr"));
+
+    rows.forEach(tr => {
+      const targetKey = tr.dataset.targetKey;
+      const rule = tr._ruleSel.value;
+
+      if (rule === "copy") {
+        result[targetKey] = {
+          type: "copy",
+          source: tr._sourceSel.value || ""
+        };
+      } else {
+        result[targetKey] = {
+          type: "constant",
+          value: tr._constInput.value || ""
+        };
+      }
+    });
+
+    return result;
+  }
+
+  btnLoadHeaders.onclick = async () => {
+    if (!zipFile.files.length) {
+      msg.textContent = "Please upload the payment instructions ZIP file.";
+      return;
+    }
+
+    msg.textContent = "Loading payment headers...";
+
+    try {
+      const form = new FormData();
+      form.append("zip_file", zipFile.files[0]);
+      form.append("header_row", headerRow.value || "2");
+
+      const res = await fetch(`${API}/sp_signature/headers`, {
+        method: "POST",
+        body: form
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        msg.textContent = data.detail || "Failed to load headers.";
+        return;
+      }
+
+      paymentHeaders = data.payment_headers || [];
+      topTargets = data.top_targets || [];
+      tableTargets = data.table_targets || [];
+
+      groupBy.innerHTML = "";
+      paymentHeaders.forEach(h => {
+        const opt = document.createElement("option");
+        opt.value = h;
+        opt.textContent = h;
+        groupBy.appendChild(opt);
+      });
+
+      renderMappings();
+      msg.textContent = `Loaded ${paymentHeaders.length} headers. Now select group-by and complete the mappings.`;
+
+    } catch (e) {
+      console.error(e);
+      msg.textContent = "Request failed: " + (e?.message || e);
+    }
+  };
+
+  btnGenerate.onclick = async () => {
+    if (!zipFile.files.length) {
+      msg.textContent = "Please upload the payment instructions ZIP file.";
+      return;
+    }
+    if (!groupBy.value) {
+      msg.textContent = "Please select a group-by field.";
+      return;
+    }
+
+    const topMappings = collectMappingsFromTable(topMapBody);
+    const tableMappings = collectMappingsFromTable(tableMapBody);
+
+    msg.textContent = "Generating grouped signature list files...";
+
+    try {
+      const form = new FormData();
+      form.append("zip_file", zipFile.files[0]);
+      form.append("header_row", headerRow.value || "2");
+      form.append("group_by", groupBy.value);
+      form.append("output_name", outputName.value || "SP signature list");
+      form.append("top_mappings", JSON.stringify(topMappings));
+      form.append("table_mappings", JSON.stringify(tableMappings));
+
+      const res = await fetch(`${API}/sp_signature/generate`, {
+        method: "POST",
+        body: form
+      });
+
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("application/json")) {
+        const data = await res.json();
+        msg.textContent = data.detail || "Generate failed.";
+        return;
+      }
+
+      if (!res.ok) {
+        msg.textContent = "Generate failed.";
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = (outputName.value || "SP signature list") + ".zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url);
+      msg.textContent = "Done. Download started.";
+    } catch (e) {
+      console.error(e);
+      msg.textContent = "Request failed: " + (e?.message || e);
+    }
+  };
+</script>
+</body>
+</html>

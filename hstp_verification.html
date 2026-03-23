@@ -1,0 +1,536 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>HSTP FSP reconciliation</title>
+  <style>
+    body { margin:0; font-family: Arial, sans-serif; background:#fafafa; }
+    .app { display:flex; min-height:100vh; }
+    .sidebar { width:360px; background:#111827; color:#fff; padding:20px 18px; box-sizing:border-box; position:sticky; top:0; height:100vh; }
+    .sidebar h1 { font-size:16px; margin:0 0 8px 0; }
+    .sidebar .sub { color:#cbd5e1; font-size:13px; line-height:1.5; }
+    .box { background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:12px; padding:12px; margin:12px 0; }
+    .box h3 { margin:0 0 8px 0; font-size:13px; color:#e5e7eb; text-transform:uppercase; letter-spacing:0.5px; }
+    .sidebar ul { margin:0; padding-left:18px; color:#e5e7eb; font-size:13px; }
+    .sidebar li { margin:6px 0; }
+    .small { font-size:12px; color:#9ca3af; margin-top:10px; }
+
+    .main { flex:1; padding:26px; box-sizing:border-box; }
+    .card { background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:0 1px 2px rgba(0,0,0,0.04); }
+    .row { display:flex; gap:14px; flex-wrap:wrap; align-items:end; }
+    label { font-size:13px; color:#111827; font-weight:bold; }
+    input[type="text"], input[type="password"], input[type="number"], select {
+      padding:8px 10px; border:1px solid #d1d5db; border-radius:10px; outline:none; min-height:36px; background:#fff;
+    }
+    input[type="file"] { margin-top:6px; }
+    button { padding:9px 12px; border-radius:10px; border:1px solid #d1d5db; background:#111827; color:#fff; cursor:pointer; }
+    button.secondary { background:#fff; color:#111827; }
+    button.danger { background:#fff; color:#b91c1c; border:1px solid #fecaca; }
+    .msg { margin-top:10px; color:#374151; font-size:13px; white-space: pre-wrap; }
+    .muted { color:#6b7280; font-size:13px; }
+
+    table { width:100%; border-collapse: collapse; }
+    thead th { background:#f3f4f6; border-bottom:1px solid #e5e7eb; padding:10px; text-align:left; font-size:13px; }
+    tbody td { border-bottom:1px solid #eef2f7; padding:10px; vertical-align:top; }
+  </style>
+</head>
+
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <h1>HSTP FSP reconciliation</h1>
+    <div class="sub">
+      Upload the FSP reconciliation file + the original HOPE payment file.
+      <b>Export includes only FSP records</b>, enriched by HOPE using Payment ID.
+    </div>
+
+    <div class="box">
+      <h3>Standard output fields</h3>
+      <ul>
+        <li>payment_id</li>
+        <li>individual_id</li>
+        <li>reference_id</li>
+        <li>Biometric referance</li>
+        <li>entitlement_quantity</li>
+        <li>delivered_quantity</li>
+        <li>delivery_date</li>
+        <li>reason_for_unsuccessful_payment</li>
+      </ul>
+    </div>
+
+    <div class="small">
+      <button class="secondary" onclick="window.location.href='index.html'">← Back</button>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <div class="card">
+      <div class="row">
+        <div style="min-width:320px;">
+          <label>FSP reconciliation file (Excel)</label><br/>
+          <input type="file" id="fspFile" accept=".xlsx,.xls"/>
+        </div>
+
+        <div>
+          <label>FSP password (if protected)</label><br/>
+          <input type="password" id="fspPassword" placeholder="Leave empty if not protected" style="width:260px;"/>
+        </div>
+
+        <div>
+          <label>FSP header row</label><br/>
+          <input type="number" id="fspHeaderRow" value="2" min="1" style="width:120px;"/>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:12px;">
+        <div style="min-width:360px;">
+          <label>HOPE original payment file (Excel)</label><br/>
+          <input type="file" id="hopeFile" accept=".xlsx,.xls"/>
+        </div>
+
+        <div>
+          <label>HOPE header row</label><br/>
+          <input type="number" id="hopeHeaderRow" value="2" min="1" style="width:160px;"/>
+        </div>
+
+        <div>
+          <button id="btnLoadHeaders">Load headers</button>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:12px;">
+        <div style="min-width:320px;">
+          <label>HOPE Payment ID column (join key)</label><br/>
+          <select id="hopeKey" style="width:320px;">
+            <option value="">(Load headers first)</option>
+          </select>
+        </div>
+
+        <div style="min-width:320px;">
+          <label>FSP Payment ID column (join key)</label><br/>
+          <select id="fspKey" style="width:320px;">
+            <option value="">(Load headers first)</option>
+          </select>
+        </div>
+
+        <div class="muted" style="max-width:520px;">
+          Join is performed using the selected columns. Output rows follow <b>FSP only</b>.
+        </div>
+      </div>
+
+      <div id="msg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <label>Output file name</label><br/>
+          <input type="text" id="outputName" value="hstp_fsp_reconciliation.xlsx" style="width:320px;"/>
+        </div>
+
+        <div style="margin-left:auto; display:flex; gap:10px;">
+          <button class="secondary" id="btnAddRow">+ Add output column</button>
+          <button id="btnAddDefaults">+ Add standard fields</button>
+          <button id="btnGenerate">Generate & Download</button>
+        </div>
+      </div>
+
+      <div class="muted" style="margin-top:10px;">
+        Rule types:
+        <b>copy</b>, <b>conditional_copy</b>, <b>set</b>, <b>conditional_set</b>.
+        Use <b>conditional_set</b> to do things like: set delivered_quantity = 0 when Status is UNSUCCESSFUL.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 8px 0;">Output mapping</h3>
+
+      <div style="overflow:auto; border:1px solid #e5e7eb; border-radius:12px;">
+        <table>
+          <thead>
+            <tr>
+              <th style="min-width:220px;">Target column</th>
+              <th style="min-width:160px;">Rule</th>
+              <th style="min-width:140px;">Source file</th>
+              <th style="min-width:260px;">Source column</th>
+              <th style="min-width:160px;">Value (for set)</th>
+              <th style="min-width:140px;">Condition file</th>
+              <th style="min-width:260px;">Condition column</th>
+              <th style="min-width:260px;">Equals any of</th>
+              <th style="width:80px; text-align:center;">Remove</th>
+            </tr>
+          </thead>
+          <tbody id="mapBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  const API = (window.location.port === "8000") ? window.location.origin : "http://127.0.0.1:8000";
+
+  const msg = document.getElementById("msg");
+
+  const fspFile = document.getElementById("fspFile");
+  const fspPassword = document.getElementById("fspPassword");
+  const fspHeaderRow = document.getElementById("fspHeaderRow");
+
+  const hopeFile = document.getElementById("hopeFile");
+  const hopeHeaderRow = document.getElementById("hopeHeaderRow");
+
+  const hopeKey = document.getElementById("hopeKey");
+  const fspKey  = document.getElementById("fspKey");
+
+  const outputName = document.getElementById("outputName");
+
+  const btnLoadHeaders = document.getElementById("btnLoadHeaders");
+  const btnAddRow = document.getElementById("btnAddRow");
+  const btnAddDefaults = document.getElementById("btnAddDefaults");
+  const btnGenerate = document.getElementById("btnGenerate");
+
+  const mapBody = document.getElementById("mapBody");
+
+  let fspCols = [];
+  let hopeCols = [];
+
+  function makeSelect(options, placeholder) {
+    const sel = document.createElement("select");
+    const opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = placeholder || "(select)";
+    sel.appendChild(opt0);
+
+    options.forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o;
+      opt.textContent = o;
+      sel.appendChild(opt);
+    });
+
+    sel.style.width = "100%";
+    return sel;
+  }
+
+  function makeFileSelect() {
+    const sel = document.createElement("select");
+    sel.innerHTML = `
+      <option value="fsp">FSP</option>
+      <option value="hope">HOPE</option>
+    `;
+    sel.style.width = "100%";
+    return sel;
+  }
+
+  function getColsByFile(fileKey) {
+    return (fileKey === "fsp") ? fspCols : hopeCols;
+  }
+
+  function autoSelect(sel, candidates) {
+    const opts = Array.from(sel.options).map(o => o.value);
+    const found = candidates.find(x => opts.includes(x));
+    if (found) sel.value = found;
+  }
+
+  function addRow(prefTarget="") {
+    const tr = document.createElement("tr");
+
+    const tdTarget = document.createElement("td");
+    const target = document.createElement("input");
+    target.type = "text";
+    target.placeholder = "e.g. payment_id";
+    target.value = prefTarget;
+    target.style.width = "100%";
+    tdTarget.appendChild(target);
+
+    const tdRule = document.createElement("td");
+    const rule = document.createElement("select");
+    rule.innerHTML = `
+      <option value="copy">copy</option>
+      <option value="conditional_copy">conditional_copy</option>
+      <option value="set">set</option>
+      <option value="conditional_set">conditional_set</option>
+    `;
+    rule.style.width = "100%";
+    tdRule.appendChild(rule);
+
+    const tdSourceFile = document.createElement("td");
+    const sourceFile = makeFileSelect();
+    tdSourceFile.appendChild(sourceFile);
+
+    const tdSourceCol = document.createElement("td");
+    let sourceCol = makeSelect(getColsByFile(sourceFile.value), "(choose source)");
+    tdSourceCol.appendChild(sourceCol);
+
+    const tdValue = document.createElement("td");
+    const valueInput = document.createElement("input");
+    valueInput.type = "text";
+    valueInput.placeholder = "e.g. 0";
+    valueInput.style.width = "100%";
+    tdValue.appendChild(valueInput);
+
+    const tdCondFile = document.createElement("td");
+    const condFile = makeFileSelect();
+    tdCondFile.appendChild(condFile);
+
+    const tdCondCol = document.createElement("td");
+    let condCol = makeSelect(getColsByFile(condFile.value), "(choose condition col)");
+    tdCondCol.appendChild(condCol);
+
+    const tdCondVals = document.createElement("td");
+    const condVals = document.createElement("input");
+    condVals.type = "text";
+    condVals.placeholder = "e.g. UNSUCCESSFUL";
+    condVals.style.width = "100%";
+    tdCondVals.appendChild(condVals);
+
+    const tdRemove = document.createElement("td");
+    tdRemove.style.textAlign = "center";
+    const rm = document.createElement("button");
+    rm.textContent = "X";
+    rm.className = "danger";
+    rm.onclick = () => tr.remove();
+    tdRemove.appendChild(rm);
+
+    [tdTarget, tdRule, tdSourceFile, tdSourceCol, tdValue, tdCondFile, tdCondCol, tdCondVals, tdRemove]
+      .forEach(td => td.style.padding = "10px");
+
+    function refreshSourceCols() {
+      const oldVal = sourceCol.value;
+      const newSel = makeSelect(getColsByFile(sourceFile.value), "(choose source)");
+      newSel.value = getColsByFile(sourceFile.value).includes(oldVal) ? oldVal : "";
+      sourceCol.replaceWith(newSel);
+      sourceCol = newSel;
+      toggleUI();
+    }
+
+    function refreshCondCols() {
+      const oldVal = condCol.value;
+      const newSel = makeSelect(getColsByFile(condFile.value), "(choose condition col)");
+      newSel.value = getColsByFile(condFile.value).includes(oldVal) ? oldVal : "";
+      condCol.replaceWith(newSel);
+      condCol = newSel;
+      toggleUI();
+    }
+
+    function toggleUI() {
+      const t = rule.value;
+
+      const needsSource = (t === "copy" || t === "conditional_copy");
+      const needsCond   = (t === "conditional_copy" || t === "conditional_set");
+      const needsValue  = (t === "set" || t === "conditional_set");
+
+      sourceFile.disabled = !needsSource;
+      sourceCol.disabled  = !needsSource;
+
+      valueInput.disabled = !needsValue;
+
+      condFile.disabled = !needsCond;
+      condCol.disabled  = !needsCond;
+      condVals.disabled = !needsCond;
+
+      const op = x => x ? "1" : "0.5";
+      sourceFile.style.opacity = op(needsSource);
+      sourceCol.style.opacity  = op(needsSource);
+      valueInput.style.opacity = op(needsValue);
+      condFile.style.opacity   = op(needsCond);
+      condCol.style.opacity    = op(needsCond);
+      condVals.style.opacity   = op(needsCond);
+    }
+
+    sourceFile.onchange = refreshSourceCols;
+    condFile.onchange = refreshCondCols;
+    rule.onchange = toggleUI;
+    toggleUI();
+
+    tr.appendChild(tdTarget);
+    tr.appendChild(tdRule);
+    tr.appendChild(tdSourceFile);
+    tr.appendChild(tdSourceCol);
+    tr.appendChild(tdValue);
+    tr.appendChild(tdCondFile);
+    tr.appendChild(tdCondCol);
+    tr.appendChild(tdCondVals);
+    tr.appendChild(tdRemove);
+
+    mapBody.appendChild(tr);
+  }
+
+  function addStandardFields() {
+    const defaults = [
+      "payment_id",
+      "individual_id",
+      "reference_id",
+      "Biometric referance",
+      "entitlement_quantity",
+      "delivered_quantity",
+      "delivery_date",
+      "reason_for_unsuccessful_payment"
+    ];
+    defaults.forEach(c => addRow(c));
+  }
+
+  btnAddRow.onclick = () => {
+    if (!fspCols.length || !hopeCols.length) { msg.textContent = "Load headers first."; return; }
+    addRow();
+  };
+
+  btnAddDefaults.onclick = () => {
+    if (!fspCols.length || !hopeCols.length) { msg.textContent = "Load headers first."; return; }
+    addStandardFields();
+  };
+
+  btnLoadHeaders.onclick = async () => {
+    if (!fspFile.files.length) { msg.textContent = "Upload FSP file."; return; }
+    if (!hopeFile.files.length) { msg.textContent = "Upload HOPE file."; return; }
+
+    msg.textContent = "Loading headers...";
+
+    try {
+      const form = new FormData();
+      form.append("fsp_file", fspFile.files[0]);
+      form.append("hope_file", hopeFile.files[0]);
+      form.append("fsp_password", fspPassword.value || "");
+      form.append("fsp_header_row", fspHeaderRow.value || "2");
+      form.append("hope_header_row", hopeHeaderRow.value || "2");
+
+      const res = await fetch(`${API}/recon/headers`, { method: "POST", body: form });
+      const data = await res.json();
+
+      if (!res.ok) { msg.textContent = data.detail || "Failed to load headers."; return; }
+
+      fspCols = data.fsp_columns || [];
+      hopeCols = data.hope_columns || [];
+
+      hopeKey.innerHTML = "";
+      hopeCols.forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = c; opt.textContent = c;
+        hopeKey.appendChild(opt);
+      });
+
+      fspKey.innerHTML = "";
+      fspCols.forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = c; opt.textContent = c;
+        fspKey.appendChild(opt);
+      });
+
+      autoSelect(hopeKey, ["payment_id", "Payment ID", "UNICEF Payment ID", "HOPE Payment ID"]);
+      autoSelect(fspKey,  ["payment_id", "Payment ID", "UNICEF Payment ID", "FSP Payment ID"]);
+
+      msg.textContent = `Loaded headers. Output will include ONLY FSP rows (${fspCols.length} columns), enriched by HOPE (${hopeCols.length} columns).`;
+
+      if (mapBody.querySelectorAll("tr").length === 0) addStandardFields();
+
+    } catch (e) {
+      console.error(e);
+      msg.textContent = "Request failed: " + (e?.message || e);
+    }
+  };
+
+  btnGenerate.onclick = async () => {
+    if (!fspFile.files.length) { msg.textContent = "Upload FSP file."; return; }
+    if (!hopeFile.files.length) { msg.textContent = "Upload HOPE file."; return; }
+    if (!hopeKey.value) { msg.textContent = "Select HOPE Payment ID column (join key)."; return; }
+    if (!fspKey.value) { msg.textContent = "Select FSP Payment ID column (join key)."; return; }
+
+    const rows = Array.from(mapBody.querySelectorAll("tr"));
+    const output_columns = [];
+
+    rows.forEach(r => {
+      const inputs = r.querySelectorAll("input");
+      const selects = r.querySelectorAll("select");
+
+      const target = (inputs[0].value || "").trim();
+      const ruleType = selects[0].value;
+
+      const sourceFile = selects[1].value;
+      const sourceCol  = (selects[2].value || "").trim();
+
+      const value = (inputs[1].value || "").trim();
+
+      const condFile = selects[3].value;
+      const condCol  = (selects[4].value || "").trim();
+      const condValsRaw = (inputs[2].value || "").trim();
+
+      if (!target) return;
+
+      if (ruleType === "copy") {
+        if (!sourceCol) return;
+        output_columns.push({ target, type: "copy", source_file: sourceFile, source: sourceCol });
+      } else if (ruleType === "conditional_copy") {
+        if (!sourceCol || !condCol) return;
+        const equals_any = condValsRaw.split(",").map(x => x.trim()).filter(x => x.length > 0);
+        output_columns.push({
+          target, type: "conditional_copy",
+          source_file: sourceFile, source: sourceCol,
+          condition: { file: condFile, column: condCol, equals_any }
+        });
+      } else if (ruleType === "set") {
+        output_columns.push({ target, type: "set", value });
+      } else if (ruleType === "conditional_set") {
+        if (!condCol) return;
+        const equals_any = condValsRaw.split(",").map(x => x.trim()).filter(x => x.length > 0);
+        output_columns.push({
+          target, type: "conditional_set",
+          value,
+          condition: { file: condFile, column: condCol, equals_any }
+        });
+      }
+    });
+
+    if (output_columns.length === 0) {
+      msg.textContent = "No mappings found. Add at least one mapping row.";
+      return;
+    }
+
+    msg.textContent = "Generating output (FSP base, joined by Payment ID)...";
+
+    try {
+      const form = new FormData();
+      form.append("fsp_file", fspFile.files[0]);
+      form.append("hope_file", hopeFile.files[0]);
+
+      form.append("fsp_password", fspPassword.value || "");
+      form.append("fsp_header_row", fspHeaderRow.value || "2");
+      form.append("hope_header_row", hopeHeaderRow.value || "2");
+
+      form.append("hope_key", hopeKey.value);
+      form.append("fsp_key", fspKey.value);
+
+      form.append("output_name", outputName.value || "hstp_fsp_reconciliation.xlsx");
+      form.append("mapping_config", JSON.stringify({ output_columns }));
+
+      const res = await fetch(`${API}/recon/generate`, { method: "POST", body: form });
+
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("application/json")) {
+        const data = await res.json();
+        msg.textContent = data.detail || "Generate failed.";
+        return;
+      }
+      if (!res.ok) { msg.textContent = "Generate failed."; return; }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = outputName.value || "hstp_fsp_reconciliation.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url);
+      msg.textContent = "Done. Download started.";
+    } catch (e) {
+      console.error(e);
+      msg.textContent = "Request failed: " + (e?.message || e);
+    }
+  };
+</script>
+</body>
+</html>

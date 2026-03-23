@@ -1,0 +1,324 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Multi-Excel Column Merge</title>
+  <style>
+    body { margin:0; font-family: Arial, sans-serif; background:#fafafa; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 22px; }
+    .card { background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:0 1px 2px rgba(0,0,0,0.04); }
+    .row { display:flex; gap:14px; flex-wrap:wrap; align-items:end; }
+    label { font-size:13px; color:#111827; font-weight:bold; }
+    input[type="text"], input[type="number"], select {
+      padding:8px 10px; border:1px solid #d1d5db; border-radius:10px; outline:none; min-height:36px; background:#fff;
+    }
+    input[type="file"] { margin-top:6px; }
+    button { padding:9px 12px; border-radius:10px; border:1px solid #d1d5db; background:#111827; color:#fff; cursor:pointer; }
+    button.secondary { background:#fff; color:#111827; }
+    .msg { margin-top:10px; color:#374151; font-size:13px; white-space: pre-wrap; }
+    .muted { color:#6b7280; font-size:13px; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .listbox { border:1px solid #e5e7eb; border-radius:12px; padding:12px; max-height: 380px; overflow:auto; }
+    .pill { display:inline-block; padding:4px 8px; border-radius:999px; background:#f3f4f6; border:1px solid #e5e7eb; margin:4px 6px 0 0; font-size:12px; }
+    .fileRow { display:flex; gap:12px; align-items:center; padding:8px 0; border-bottom:1px solid #f3f4f6; }
+    .fileName { flex:1; font-size:13px; color:#111827; }
+    .sheetSel { width:320px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h2 style="margin:0 0 6px 0;">Upload multiple Excel files → select sheet per file → pick columns → download merged file</h2>
+      <div class="muted">
+        Step 1: Upload files. Step 2: Load sheets and select the sheet for each file. Step 3: Load headers and pick columns.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div style="min-width:420px;">
+          <label>Upload Excel files (multiple)</label><br/>
+          <input id="files" type="file" accept=".xlsx,.xls" multiple />
+        </div>
+
+        <div>
+          <label>Header row (1-based)</label><br/>
+          <input id="headerRow" type="number" value="2" min="1" style="width:160px;" />
+        </div>
+
+        <div style="display:flex; gap:10px;">
+          <button id="btnSheets">Load sheets</button>
+          <button id="btnLoad">Load headers</button>
+        </div>
+      </div>
+
+      <div class="muted" style="margin-top:10px;">
+        Select the sheet for each file before loading headers.
+      </div>
+
+      <div id="sheetsBox" class="listbox" style="margin-top:10px;"></div>
+
+      <div id="msg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <label>Output file name</label><br/>
+          <input id="outputName" type="text" value="merged.xlsx" style="width:260px;" />
+        </div>
+        <div style="margin-left:auto; display:flex; gap:10px;">
+          <button class="secondary" id="btnSelectAll">Select all</button>
+          <button class="secondary" id="btnClear">Clear</button>
+          <button id="btnGenerate">Generate & Download</button>
+        </div>
+      </div>
+
+      <div class="grid" style="margin-top:14px;">
+        <div>
+          <label>Available columns (deduplicated)</label>
+          <div class="listbox" id="colsBox"></div>
+        </div>
+        <div>
+          <label>Selected columns</label>
+          <div class="listbox" id="selectedBox"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const API = (window.location.port === "8000") ? window.location.origin : "http://127.0.0.1:8000";
+
+  const filesEl = document.getElementById("files");
+  const headerRowEl = document.getElementById("headerRow");
+  const outputNameEl = document.getElementById("outputName");
+
+  const btnSheets = document.getElementById("btnSheets");
+  const btnLoad = document.getElementById("btnLoad");
+  const btnSelectAll = document.getElementById("btnSelectAll");
+  const btnClear = document.getElementById("btnClear");
+  const btnGenerate = document.getElementById("btnGenerate");
+
+  const sheetsBox = document.getElementById("sheetsBox");
+  const colsBox = document.getElementById("colsBox");
+  const selectedBox = document.getElementById("selectedBox");
+  const msg = document.getElementById("msg");
+
+  let availableCols = [];
+  let selectedCols = new Set();
+
+  // sheetSelections[i] corresponds to filesEl.files[i]
+  let sheetSelections = [];
+
+  function renderColumns() {
+    colsBox.innerHTML = "";
+    availableCols.forEach(col => {
+      const div = document.createElement("div");
+      div.style.display = "flex";
+      div.style.alignItems = "center";
+      div.style.gap = "10px";
+      div.style.padding = "6px 4px";
+      div.style.borderBottom = "1px solid #f3f4f6";
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = selectedCols.has(col);
+      cb.onchange = () => {
+        if (cb.checked) selectedCols.add(col);
+        else selectedCols.delete(col);
+        renderSelected();
+      };
+
+      const label = document.createElement("div");
+      label.textContent = col;
+      label.style.flex = "1";
+
+      div.appendChild(cb);
+      div.appendChild(label);
+      colsBox.appendChild(div);
+    });
+
+    renderSelected();
+  }
+
+  function renderSelected() {
+    selectedBox.innerHTML = "";
+    Array.from(selectedCols).forEach(col => {
+      const span = document.createElement("span");
+      span.className = "pill";
+      span.textContent = col;
+      selectedBox.appendChild(span);
+    });
+  }
+
+  btnSelectAll.onclick = () => {
+    availableCols.forEach(c => selectedCols.add(c));
+    renderColumns();
+  };
+
+  btnClear.onclick = () => {
+    selectedCols.clear();
+    renderColumns();
+  };
+
+  function renderSheetsUI(filesInfo) {
+    sheetsBox.innerHTML = "";
+    sheetSelections = new Array(filesEl.files.length).fill("");
+
+    filesInfo.forEach((fi, idx) => {
+      const row = document.createElement("div");
+      row.className = "fileRow";
+
+      const name = document.createElement("div");
+      name.className = "fileName";
+      name.textContent = fi.filename;
+
+      const sel = document.createElement("select");
+      sel.className = "sheetSel";
+
+      (fi.sheets || []).forEach(s => {
+        const opt = document.createElement("option");
+        opt.value = s;
+        opt.textContent = s;
+        sel.appendChild(opt);
+      });
+
+      // default to first sheet
+      if ((fi.sheets || []).length > 0) {
+        sheetSelections[idx] = fi.sheets[0];
+      }
+
+      sel.onchange = () => {
+        sheetSelections[idx] = sel.value;
+      };
+
+      row.appendChild(name);
+      row.appendChild(sel);
+      sheetsBox.appendChild(row);
+    });
+  }
+
+  btnSheets.onclick = async () => {
+    if (!filesEl.files.length) {
+      msg.textContent = "Please upload at least 1 Excel file.";
+      return;
+    }
+
+    msg.textContent = "Loading sheet names...";
+    sheetsBox.innerHTML = "";
+    availableCols = [];
+    selectedCols.clear();
+    renderColumns();
+
+    try {
+      const form = new FormData();
+      for (const f of filesEl.files) form.append("files", f);
+
+      const res = await fetch(`${API}/multi_merge/sheets`, { method: "POST", body: form });
+      const data = await res.json();
+
+      if (!res.ok) {
+        msg.textContent = data.detail || "Failed to load sheets.";
+        return;
+      }
+
+      const filesInfo = data.files || [];
+      if (filesInfo.length !== filesEl.files.length) {
+        msg.textContent = "Sheet discovery mismatch. Try again.";
+        return;
+      }
+
+      renderSheetsUI(filesInfo);
+      msg.textContent = "Sheets loaded. Now select each sheet and click 'Load headers'.";
+    } catch (e) {
+      console.error(e);
+      msg.textContent = "Could not reach the server. Make sure uvicorn is running on 127.0.0.1:8000.";
+    }
+  };
+
+  btnLoad.onclick = async () => {
+    if (!filesEl.files.length) { msg.textContent = "Upload files first."; return; }
+    if (!sheetSelections.length || sheetSelections.some(s => !s)) {
+      msg.textContent = "Load sheets first and select a sheet for every file.";
+      return;
+    }
+
+    msg.textContent = "Loading headers...";
+    availableCols = [];
+    selectedCols.clear();
+    renderColumns();
+
+    try {
+      const form = new FormData();
+      for (const f of filesEl.files) form.append("files", f);
+      form.append("header_row", headerRowEl.value || "2");
+      form.append("selected_sheets", JSON.stringify(sheetSelections));
+
+      const res = await fetch(`${API}/multi_merge/headers`, { method: "POST", body: form });
+      const data = await res.json();
+
+      if (!res.ok) {
+        msg.textContent = data.detail || "Failed to load headers.";
+        return;
+      }
+
+      availableCols = data.columns || [];
+      msg.textContent = `Loaded ${availableCols.length} unique columns from ${filesEl.files.length} files (using selected sheets).`;
+      renderColumns();
+
+    } catch (e) {
+      console.error(e);
+      msg.textContent = "Request failed: " + (e?.message || e);
+    }
+  };
+
+  btnGenerate.onclick = async () => {
+    if (!filesEl.files.length) { msg.textContent = "Upload files first."; return; }
+    if (!sheetSelections.length || sheetSelections.some(s => !s)) {
+      msg.textContent = "Load sheets first and select a sheet for every file.";
+      return;
+    }
+    if (availableCols.length === 0) { msg.textContent = "Load headers first."; return; }
+    if (selectedCols.size === 0) { msg.textContent = "Select at least one column."; return; }
+
+    msg.textContent = "Generating merged file...";
+
+    try {
+      const form = new FormData();
+      for (const f of filesEl.files) form.append("files", f);
+      form.append("header_row", headerRowEl.value || "2");
+      form.append("output_name", outputNameEl.value || "merged.xlsx");
+      form.append("selected_columns", JSON.stringify(Array.from(selectedCols)));
+      form.append("selected_sheets", JSON.stringify(sheetSelections));
+
+      const res = await fetch(`${API}/multi_merge/generate`, { method: "POST", body: form });
+
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("application/json")) {
+        const data = await res.json();
+        msg.textContent = data.detail || "Generate failed.";
+        return;
+      }
+      if (!res.ok) { msg.textContent = "Generate failed."; return; }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = outputNameEl.value || "merged.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url);
+      msg.textContent = "Done. Download started.";
+    } catch (e) {
+      console.error(e);
+      msg.textContent = "Request failed: " + (e?.message || e);
+    }
+  };
+</script>
+</body>
+</html>

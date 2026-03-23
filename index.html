@@ -1,0 +1,429 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>FSP/HOPE Flexible Mapper</title>
+  <style>
+    body { margin:0; font-family: Arial, sans-serif; background:#fafafa; }
+    .app { display:flex; min-height:100vh; }
+    .sidebar {
+      width: 360px; background: #111827; color: #fff;
+      padding: 20px 18px; box-sizing: border-box;
+      position: sticky; top: 0; height: 100vh;
+    }
+    .sidebar h1 { font-size: 16px; margin: 0 0 8px 0; }
+    .sidebar .sub { color:#cbd5e1; font-size: 13px; line-height: 1.5; margin-bottom: 14px; }
+    .nav { display:flex; flex-direction: column; gap: 8px; margin: 10px 0 16px 0; }
+    .nav button {
+      text-align:left; padding: 10px 12px; border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.06);
+      color: #fff; cursor: pointer;
+    }
+    .nav button.active { background: rgba(59,130,246,0.20); border: 1px solid rgba(59,130,246,0.45); }
+    .box {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px; padding: 12px; margin: 12px 0;
+    }
+    .box h3 { margin: 0 0 8px 0; font-size: 13px; color: #e5e7eb; text-transform: uppercase; letter-spacing: 0.5px; }
+    .sidebar ul { margin: 0; padding-left: 18px; color: #e5e7eb; font-size: 13px; }
+    .sidebar li { margin: 6px 0; }
+    .small { font-size: 12px; color:#9ca3af; margin-top: 10px; }
+    .pill {
+      display:inline-block; padding: 4px 8px; border-radius: 999px;
+      background: rgba(59,130,246,0.18); border: 1px solid rgba(59,130,246,0.35);
+      color: #bfdbfe; font-size: 12px; margin-top: 6px;
+    }
+
+    .main { flex: 1; padding: 26px; box-sizing: border-box; }
+    .card {
+      background:#fff; border:1px solid #e5e7eb; border-radius: 14px;
+      padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .row { display:flex; gap: 14px; flex-wrap: wrap; align-items: end; }
+    label { font-size: 13px; color:#111827; font-weight: bold; }
+    input[type="text"], input[type="password"], input[type="number"], select {
+      padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 10px; outline: none;
+      min-height: 36px; background: #fff;
+    }
+    input[type="file"] { margin-top: 6px; }
+    button.action {
+      padding: 9px 12px; border-radius: 10px; border: 1px solid #d1d5db;
+      background: #111827; color: #fff; cursor: pointer;
+    }
+    button.action.secondary { background:#fff; color:#111827; }
+    button.action:hover { opacity: 0.95; }
+    .msg { margin-top: 10px; color:#374151; font-size: 13px; white-space: pre-wrap; }
+
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      background: #f3f4f6; border-bottom: 1px solid #e5e7eb; padding: 10px;
+      text-align: left; font-size: 13px; color:#111827;
+    }
+    tbody td { border-bottom: 1px solid #eef2f7; padding: 10px; vertical-align: top; }
+    .muted { color:#6b7280; font-size: 13px; }
+    .right-actions { display:flex; gap:10px; align-items:center; justify-content: space-between; }
+    .danger { background:#fff; color:#b91c1c; border: 1px solid #fecaca; }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h1 id="sidebarTitle">FSP → HOPE (Flexible)</h1>
+      <div class="sub">Upload Excel, load headers, then create any output columns. Use conditional rules if needed.</div>
+
+      <div class="nav">
+        <button id="navFspHope" class="active">FSP → HOPE (Flexible)</button>
+        <button id="navHopeFsp">HOPE → FSP (Flexible)</button>
+        <button id="navHstpExport">HSTP → FSP Export (ZIP→ZIP)</button>
+        <button id="navHstpVerification">HSTP data verification</button>
+        <button id="navHstpRecon">HSTP FSP reconciliation</button>
+        <button id="navMultiExcelMerge">Multi Excel Merge</button>
+        <button id="navSignatureList">HSTP signature list from ZIP</button>
+        <button id="navSpSignatureList"> SP Signature List from ZIP</button>
+
+      </div>
+
+      <div class="box">
+        <h3>Rules</h3>
+        <ul>
+          <li><b>copy</b>: copy source</li>
+          <li><b>conditional_copy</b>: copy when condition matches</li>
+        </ul>
+        <div class="pill">equals any of (comma-separated)</div>
+      </div>
+
+      <div class="box">
+        <h3>Tip</h3>
+        <div style="font-size:13px; color:#e5e7eb; line-height:1.5;">
+          Open UI via FastAPI for fewer CORS issues:
+          <br><b>/ui/index.html</b>
+        </div>
+      </div>
+
+      <div class="small">API default: <b>http://127.0.0.1:8000</b></div>
+    </aside>
+
+    <main class="main">
+      <div class="card">
+        <div class="row">
+          <div style="min-width: 320px;">
+            <label>Excel file</label><br />
+            <input type="file" id="file" accept=".xlsx,.xls" />
+          </div>
+
+          <div>
+            <label>Password (if protected)</label><br />
+            <input type="password" id="password" placeholder="Leave empty if not protected" style="width: 260px;" />
+          </div>
+
+          <div>
+            <label>Header row number</label><br />
+            <input type="number" id="headerRow" value="2" min="1" style="width: 120px;" />
+          </div>
+
+          <div>
+            <button class="action" id="btnLoadHeaders">Load headers</button>
+          </div>
+        </div>
+
+        <div id="msg" class="msg"></div>
+      </div>
+
+      <div class="card">
+        <div class="right-actions">
+          <div>
+            <h3 style="margin:0;">Mappings</h3>
+            <div class="muted">Leave target or source empty to ignore that row.</div>
+          </div>
+          <div style="display:flex; gap:10px;">
+            <button class="action secondary" id="btnAddRow">+ Add output column</button>
+            <button class="action" id="btnTransform">Transform & Download</button>
+          </div>
+        </div>
+
+        <div style="margin-top: 12px; overflow:auto; border:1px solid #e5e7eb; border-radius: 12px;">
+          <table>
+            <thead>
+              <tr>
+                <th style="min-width:220px;">Output column (target)</th>
+                <th style="min-width:150px;">Rule</th>
+                <th style="min-width:220px;">Source column</th>
+                <th style="min-width:220px;">Condition column</th>
+                <th style="min-width:260px;">Equals any of</th>
+                <th style="width:80px; text-align:center;">Remove</th>
+              </tr>
+            </thead>
+            <tbody id="mapBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+<script>
+  // If UI opened from FastAPI /ui, use same origin; otherwise default to API on 8000
+  const API_BASE = (window.location.port === "8000") ? window.location.origin : "http://127.0.0.1:8000";
+
+  const msg = document.getElementById("msg");
+  const fileInput = document.getElementById("file");
+  const passwordInput = document.getElementById("password");
+  const headerRowInput = document.getElementById("headerRow");
+
+  const btnLoadHeaders = document.getElementById("btnLoadHeaders");
+  const btnAddRow = document.getElementById("btnAddRow");
+  const btnTransform = document.getElementById("btnTransform");
+  const mapBody = document.getElementById("mapBody");
+
+  const navFspHope = document.getElementById("navFspHope");
+  const navHopeFsp = document.getElementById("navHopeFsp");
+  const navHstpExport = document.getElementById("navHstpExport");
+  const navHstpVerification = document.getElementById("navHstpVerification");
+  const sidebarTitle = document.getElementById("sidebarTitle");
+  const navHstpRecon = document.getElementById("navHstpRecon");
+  const navMultiExcelMerge = document.getElementById("navMultiExcelMerge");
+  const navSignatureList = document.getElementById("navSignatureList");
+  const navSpSignatureList = document.getElementById("navSpSignatureList");
+
+
+  let direction = "fsp_to_hope";
+  let headers = [];
+
+  function setDirection(newDir) {
+    direction = newDir;
+    navFspHope.classList.toggle("active", direction === "fsp_to_hope");
+    navHopeFsp.classList.toggle("active", direction === "hope_to_fsp");
+
+    sidebarTitle.textContent = (direction === "fsp_to_hope") ? "FSP → HOPE (Flexible)" : "HOPE → FSP (Flexible)";
+    headers = [];
+    msg.textContent = "Mode changed. Click 'Load headers' again.";
+    refreshAllSelects();
+  }
+
+  navFspHope.onclick = () => setDirection("fsp_to_hope");
+  navHopeFsp.onclick = () => setDirection("hope_to_fsp");
+  navHstpExport.onclick = () => window.location.href = "hstp_fsp.html";
+  navHstpVerification.onclick = () => window.location.href = "hstp_verification.html";
+  navHstpRecon.onclick = () => window.location.href = "hstp_fsp_reconciliation.html";
+  navMultiExcelMerge.onclick = () => window.location.href = "multi_excel_merge.html";
+  navSignatureList.onclick = () => window.location.href = "hstp_signature_list.html";
+  navSpSignatureList.onclick = () => window.location.href = "sp_signature_list.html";
+  
+
+  function makeSelect(options, placeholder) {
+    const sel = document.createElement("select");
+    const opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = placeholder || "(select)";
+    sel.appendChild(opt0);
+
+    options.forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o;
+      opt.textContent = o;
+      sel.appendChild(opt);
+    });
+
+    sel.style.width = "100%";
+    return sel;
+  }
+
+  function addRow() {
+    const tr = document.createElement("tr");
+
+    const tdTarget = document.createElement("td");
+    const targetInput = document.createElement("input");
+    targetInput.type = "text";
+    targetInput.placeholder = "e.g. payment_id";
+    targetInput.style.width = "100%";
+    tdTarget.appendChild(targetInput);
+
+    const tdRule = document.createElement("td");
+    const ruleSel = document.createElement("select");
+    ruleSel.innerHTML = `
+      <option value="copy">copy</option>
+      <option value="conditional_copy">conditional_copy</option>
+    `;
+    ruleSel.style.width = "100%";
+    tdRule.appendChild(ruleSel);
+
+    const tdSource = document.createElement("td");
+    const sourceSel = makeSelect(headers, "(choose source)");
+    tdSource.appendChild(sourceSel);
+
+    const tdCondCol = document.createElement("td");
+    const condSel = makeSelect(headers, "(choose condition col)");
+    tdCondCol.appendChild(condSel);
+
+    const tdCondVals = document.createElement("td");
+    const condVals = document.createElement("input");
+    condVals.type = "text";
+    condVals.placeholder = "e.g. SUCCESSFUL, PAID";
+    condVals.style.width = "100%";
+    tdCondVals.appendChild(condVals);
+
+    const tdRemove = document.createElement("td");
+    tdRemove.style.textAlign = "center";
+    const rm = document.createElement("button");
+    rm.textContent = "X";
+    rm.className = "action danger";
+    rm.onclick = () => tr.remove();
+    tdRemove.appendChild(rm);
+
+    function toggleCondUI() {
+      const isCond = ruleSel.value === "conditional_copy";
+      condSel.disabled = !isCond;
+      condVals.disabled = !isCond;
+      condSel.style.opacity = isCond ? "1" : "0.5";
+      condVals.style.opacity = isCond ? "1" : "0.5";
+    }
+    ruleSel.onchange = toggleCondUI;
+    toggleCondUI();
+
+    [tdTarget, tdRule, tdSource, tdCondCol, tdCondVals, tdRemove].forEach(td => td.style.padding = "10px");
+
+    tr.appendChild(tdTarget);
+    tr.appendChild(tdRule);
+    tr.appendChild(tdSource);
+    tr.appendChild(tdCondCol);
+    tr.appendChild(tdCondVals);
+    tr.appendChild(tdRemove);
+
+    mapBody.appendChild(tr);
+  }
+
+  function refreshAllSelects() {
+    const rows = Array.from(mapBody.querySelectorAll("tr"));
+    rows.forEach(r => {
+      const selects = r.querySelectorAll("select");
+      const ruleSel = selects[0];
+      const sourceSelOld = selects[1];
+      const condSelOld = selects[2];
+
+      const sourceVal = sourceSelOld.value;
+      const condVal = condSelOld.value;
+
+      const newSource = makeSelect(headers, "(choose source)");
+      newSource.value = headers.includes(sourceVal) ? sourceVal : "";
+
+      const newCond = makeSelect(headers, "(choose condition col)");
+      newCond.value = headers.includes(condVal) ? condVal : "";
+
+      sourceSelOld.replaceWith(newSource);
+      condSelOld.replaceWith(newCond);
+
+      const inputs = r.querySelectorAll("input");
+      const condVals = inputs[1];
+
+      function toggle() {
+        const isCond = ruleSel.value === "conditional_copy";
+        newCond.disabled = !isCond;
+        condVals.disabled = !isCond;
+        newCond.style.opacity = isCond ? "1" : "0.5";
+        condVals.style.opacity = isCond ? "1" : "0.5";
+      }
+      ruleSel.onchange = toggle;
+      toggle();
+    });
+  }
+
+  btnAddRow.onclick = () => addRow();
+
+  btnLoadHeaders.onclick = async () => {
+    if (!fileInput.files.length) { msg.textContent = "Select an Excel file first."; return; }
+
+    msg.textContent = "Loading headers...";
+    try {
+      const form = new FormData();
+      form.append("file", fileInput.files[0]);
+      form.append("password", passwordInput.value || "");
+      form.append("header_row", headerRowInput.value || "2");
+      form.append("direction", direction);
+
+      const res = await fetch(`${API_BASE}/headers`, { method: "POST", body: form });
+      const data = await res.json();
+
+      if (!res.ok) {
+        msg.textContent = data.detail || "Failed to load headers.";
+        return;
+      }
+
+      headers = data.columns || [];
+      msg.textContent = `Loaded ${headers.length} headers. (API: ${API_BASE})`;
+      refreshAllSelects();
+      if (mapBody.querySelectorAll("tr").length === 0) addRow();
+    } catch (e) {
+      console.error(e);
+      msg.textContent = "Request failed: " + (e?.message || e);
+    }
+  };
+
+  btnTransform.onclick = async () => {
+    if (!fileInput.files.length) { msg.textContent = "Select an Excel file first."; return; }
+    if (!headers.length) { msg.textContent = "Click 'Load headers' first."; return; }
+
+    msg.textContent = "Uploading and transforming...";
+    try {
+      const rows = Array.from(mapBody.querySelectorAll("tr"));
+      const output_columns = [];
+
+      rows.forEach(r => {
+        const inputs = r.querySelectorAll("input");
+        const selects = r.querySelectorAll("select");
+        const target = (inputs[0].value || "").trim();
+        const ruleType = selects[0].value;
+        const source = (selects[1].value || "").trim();
+        const condCol = (selects[2].value || "").trim();
+        const condValsRaw = (inputs[1].value || "").trim();
+
+        if (!target || !source) return;
+
+        if (ruleType === "copy") {
+          output_columns.push({ target, type: "copy", source });
+        } else {
+          const equals_any = condValsRaw.split(",").map(x => x.trim()).filter(x => x.length > 0);
+          output_columns.push({ target, type: "conditional_copy", source, condition: { column: condCol, equals_any } });
+        }
+      });
+
+      const mapping_config = JSON.stringify({ output_columns });
+
+      const form = new FormData();
+      form.append("file", fileInput.files[0]);
+      form.append("password", passwordInput.value || "");
+      form.append("header_row", headerRowInput.value || "2");
+      form.append("direction", direction);
+      form.append("mapping_config", mapping_config);
+
+      const res = await fetch(`${API_BASE}/transform`, { method: "POST", body: form });
+
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("application/json")) {
+        const data = await res.json();
+        msg.textContent = data.detail || "Transform failed.";
+        return;
+      }
+      if (!res.ok) { msg.textContent = "Transform failed."; return; }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${direction}_mapped_output.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url);
+      msg.textContent = "Done. Download started.";
+    } catch (e) {
+      console.error(e);
+      msg.textContent = "Request failed: " + (e?.message || e);
+    }
+  };
+</script>
+</body>
+</html>

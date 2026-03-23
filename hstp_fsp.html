@@ -1,0 +1,450 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>HSTP → FSP Export</title>
+  <style>
+    body { margin:0; font-family: Arial, sans-serif; background:#fafafa; }
+    .app { display:flex; min-height:100vh; }
+    .sidebar { width:360px; background:#111827; color:#fff; padding:20px 18px; box-sizing:border-box; position:sticky; top:0; height:100vh; }
+    .sidebar h1 { font-size:16px; margin:0 0 8px 0; }
+    .sidebar .sub { color:#cbd5e1; font-size:13px; line-height:1.5; }
+    .box { background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:12px; padding:12px; margin:12px 0; }
+    .box h3 { margin:0 0 8px 0; font-size:13px; color:#e5e7eb; text-transform:uppercase; letter-spacing:0.5px; }
+    .sidebar ul { margin:0; padding-left:18px; color:#e5e7eb; font-size:13px; }
+    .sidebar li { margin:6px 0; }
+    .small { font-size:12px; color:#9ca3af; margin-top:10px; }
+
+    .main { flex:1; padding:26px; box-sizing:border-box; }
+    .card { background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:0 1px 2px rgba(0,0,0,0.04); }
+    .row { display:flex; gap:14px; flex-wrap:wrap; align-items:end; }
+    label { font-size:13px; color:#111827; font-weight:bold; }
+    input[type="text"], input[type="password"], input[type="number"], select {
+      padding:8px 10px; border:1px solid #d1d5db; border-radius:10px; outline:none; min-height:36px; background:#fff;
+    }
+    button { padding:9px 12px; border-radius:10px; border:1px solid #d1d5db; background:#111827; color:#fff; cursor:pointer; }
+    button.secondary { background:#fff; color:#111827; }
+    button.danger { background:#fff; color:#b91c1c; border:1px solid #fecaca; }
+    .msg { margin-top:10px; color:#374151; font-size:13px; white-space: pre-wrap; }
+
+    table { width:100%; border-collapse:collapse; }
+    thead th { background:#f3f4f6; border-bottom:1px solid #e5e7eb; padding:10px; text-align:left; font-size:13px; }
+    tbody td { border-bottom:1px solid #eef2f7; padding:10px; vertical-align:top; }
+  </style>
+</head>
+
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <h1>HSTP → FSP export</h1>
+    <div class="sub">Upload ZIP (contains Excel), build CSV mapping (supports constants), then download an AES passworded ZIP.</div>
+
+    <div class="box">
+      <h3>Steps</h3>
+      <ul>
+        <li>Upload ZIP</li>
+        <li>Load Excel list</li>
+        <li>Select Excel + load headers</li>
+        <li>Map output columns</li>
+        <li>Set output name + password</li>
+        <li>Generate ZIP</li>
+      </ul>
+    </div>
+
+    <div class="small">
+      <button class="secondary" onclick="window.location.href='index.html'">← Back</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="card">
+      <div class="row">
+        <div style="min-width:320px;">
+          <label>Upload ZIP (contains Excel)</label><br/>
+          <input type="file" id="zipfile" accept=".zip"/>
+        </div>
+
+        <div>
+          <label>Header row</label><br/>
+          <input type="number" id="headerRow" value="2" min="1" style="width:120px;"/>
+        </div>
+
+        <div>
+          <button id="btnLoadZip">Load Excel list</button>
+        </div>
+
+        <div style="min-width:280px;">
+          <label>Excel inside ZIP</label><br/>
+          <select id="excelSelect" style="width:280px;"></select>
+        </div>
+
+        <div>
+          <button id="btnLoadHeaders">Load headers</button>
+        </div>
+      </div>
+      <div id="msg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <label>FSP</label><br/>
+          <select id="fsp" style="width:220px;">
+            <option value="">(Select FSP)</option>
+            <option value="EquityBank">Equity Bank</option>
+            <option value="MTN">MTN</option>
+            <option value="Zain">Zain</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
+        <div>
+          <label>Output base name</label><br/>
+          <input type="text" id="outputName" placeholder="e.g. HSTP_Dec_2025" style="width:260px;"/>
+        </div>
+
+        <div>
+          <label>ZIP password</label><br/>
+          <input type="password" id="zipPassword" placeholder="Min 4 characters" style="width:260px;"/>
+        </div>
+
+        <div style="margin-left:auto; display:flex; gap:10px;">
+          <button class="secondary" id="btnAddRow">+ Add output column</button>
+          <button id="btnGenerate">Generate ZIP</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 8px 0;">Output mapping</h3>
+      <div style="color:#6b7280; font-size:13px; margin-bottom: 10px;">
+        Rules: copy / conditional_copy / constant
+      </div>
+
+      <div style="overflow:auto; border:1px solid #e5e7eb; border-radius:12px;">
+        <table>
+          <thead>
+            <tr>
+              <th style="min-width:220px;">Target</th>
+              <th style="min-width:160px;">Rule</th>
+              <th style="min-width:220px;">Source</th>
+              <th style="min-width:220px;">Condition column</th>
+              <th style="min-width:260px;">Equals any of</th>
+              <th style="min-width:220px;">Constant value</th>
+              <th style="width:80px; text-align:center;">Remove</th>
+            </tr>
+          </thead>
+          <tbody id="mapBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  const API = (window.location.port === "8000") ? window.location.origin : "http://127.0.0.1:8000";
+  const msg = document.getElementById("msg");
+
+  const zipInput = document.getElementById("zipfile");
+  const headerRowInput = document.getElementById("headerRow");
+  const excelSelect = document.getElementById("excelSelect");
+
+  const btnLoadZip = document.getElementById("btnLoadZip");
+  const btnLoadHeaders = document.getElementById("btnLoadHeaders");
+
+  const fspSel = document.getElementById("fsp");
+  const outputName = document.getElementById("outputName");
+  const zipPassword = document.getElementById("zipPassword");
+
+  const btnAddRow = document.getElementById("btnAddRow");
+  const btnGenerate = document.getElementById("btnGenerate");
+  const mapBody = document.getElementById("mapBody");
+
+  let headers = [];
+
+  function clearExcelSelect() {
+    excelSelect.innerHTML = "";
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "(Load ZIP first)";
+    excelSelect.appendChild(opt);
+  }
+  clearExcelSelect();
+
+  function makeSelect(options, placeholder) {
+    const sel = document.createElement("select");
+    const opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = placeholder || "(select)";
+    sel.appendChild(opt0);
+    options.forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o;
+      opt.textContent = o;
+      sel.appendChild(opt);
+    });
+    sel.style.width = "100%";
+    return sel;
+  }
+
+  function addRow() {
+    const tr = document.createElement("tr");
+
+    const tdTarget = document.createElement("td");
+    const target = document.createElement("input");
+    target.type = "text";
+    target.placeholder = "e.g. phone_number";
+    target.style.width = "100%";
+    tdTarget.appendChild(target);
+
+    const tdRule = document.createElement("td");
+    const rule = document.createElement("select");
+    rule.innerHTML = `
+      <option value="copy">copy</option>
+      <option value="conditional_copy">conditional_copy</option>
+      <option value="constant">constant</option>
+    `;
+    rule.style.width = "100%";
+    tdRule.appendChild(rule);
+
+    const tdSource = document.createElement("td");
+    const source = makeSelect(headers, "(choose source)");
+    tdSource.appendChild(source);
+
+    const tdCondCol = document.createElement("td");
+    const condCol = makeSelect(headers, "(choose condition col)");
+    tdCondCol.appendChild(condCol);
+
+    const tdCondVals = document.createElement("td");
+    const condVals = document.createElement("input");
+    condVals.type = "text";
+    condVals.placeholder = "e.g. SUCCESSFUL, PAID";
+    condVals.style.width = "100%";
+    tdCondVals.appendChild(condVals);
+
+    const tdConst = document.createElement("td");
+    const constVal = document.createElement("input");
+    constVal.type = "text";
+    constVal.placeholder = "value for constant columns";
+    constVal.style.width = "100%";
+    tdConst.appendChild(constVal);
+
+    const tdRemove = document.createElement("td");
+    tdRemove.style.textAlign = "center";
+    const rm = document.createElement("button");
+    rm.textContent = "X";
+    rm.className = "danger";
+    rm.onclick = () => tr.remove();
+    tdRemove.appendChild(rm);
+
+    [tdTarget, tdRule, tdSource, tdCondCol, tdCondVals, tdConst, tdRemove].forEach(td => td.style.padding = "10px");
+
+    function toggleUI() {
+      const t = rule.value;
+      const isCopy = t === "copy";
+      const isCond = t === "conditional_copy";
+      const isConst = t === "constant";
+
+      source.disabled = !(isCopy || isCond);
+      condCol.disabled = !isCond;
+      condVals.disabled = !isCond;
+      constVal.disabled = !isConst;
+
+      source.style.opacity = (isCopy || isCond) ? "1" : "0.5";
+      condCol.style.opacity = isCond ? "1" : "0.5";
+      condVals.style.opacity = isCond ? "1" : "0.5";
+      constVal.style.opacity = isConst ? "1" : "0.5";
+    }
+    rule.onchange = toggleUI;
+    toggleUI();
+
+    tr.appendChild(tdTarget);
+    tr.appendChild(tdRule);
+    tr.appendChild(tdSource);
+    tr.appendChild(tdCondCol);
+    tr.appendChild(tdCondVals);
+    tr.appendChild(tdConst);
+    tr.appendChild(tdRemove);
+
+    mapBody.appendChild(tr);
+  }
+
+  function refreshSelects() {
+    const rows = Array.from(mapBody.querySelectorAll("tr"));
+    rows.forEach(r => {
+      const selects = r.querySelectorAll("select");
+      const ruleSel = selects[0];
+
+      const sourceOld = selects[1];
+      const condOld = selects[2];
+      const oldSourceVal = sourceOld.value;
+      const oldCondVal = condOld.value;
+
+      const newSource = makeSelect(headers, "(choose source)");
+      newSource.value = headers.includes(oldSourceVal) ? oldSourceVal : "";
+
+      const newCond = makeSelect(headers, "(choose condition col)");
+      newCond.value = headers.includes(oldCondVal) ? oldCondVal : "";
+
+      sourceOld.replaceWith(newSource);
+      condOld.replaceWith(newCond);
+
+      const inputs = r.querySelectorAll("input");
+      const condVals = inputs[1];
+      const constVal = inputs[2];
+
+      function toggleUI() {
+        const t = ruleSel.value;
+        const isCopy = t === "copy";
+        const isCond = t === "conditional_copy";
+        const isConst = t === "constant";
+
+        newSource.disabled = !(isCopy || isCond);
+        newCond.disabled = !isCond;
+        condVals.disabled = !isCond;
+        constVal.disabled = !isConst;
+
+        newSource.style.opacity = (isCopy || isCond) ? "1" : "0.5";
+        newCond.style.opacity = isCond ? "1" : "0.5";
+        condVals.style.opacity = isCond ? "1" : "0.5";
+        constVal.style.opacity = isConst ? "1" : "0.5";
+      }
+      ruleSel.onchange = toggleUI;
+      toggleUI();
+    });
+  }
+
+  btnAddRow.onclick = () => addRow();
+
+  btnLoadZip.onclick = async () => {
+    if (!zipInput.files.length) { msg.textContent = "Select a ZIP file first."; return; }
+    msg.textContent = "Inspecting ZIP...";
+
+    try {
+      const form = new FormData();
+      form.append("zipfile_upload", zipInput.files[0]);
+      form.append("header_row", headerRowInput.value || "2");
+      form.append("excel_name", "");
+
+      const res = await fetch(`${API}/hstp/inspect`, { method:"POST", body: form });
+      const data = await res.json();
+
+      if (!res.ok) { msg.textContent = data.detail || "Failed to inspect ZIP."; return; }
+
+      excelSelect.innerHTML = "";
+      (data.excel_files || []).forEach(name => {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        excelSelect.appendChild(opt);
+      });
+
+      msg.textContent = "ZIP loaded. Select an Excel file and click 'Load headers'.";
+    } catch (e) {
+      console.error(e);
+      msg.textContent = "Request failed: " + (e?.message || e);
+    }
+  };
+
+  btnLoadHeaders.onclick = async () => {
+    if (!zipInput.files.length) { msg.textContent = "Select a ZIP file first."; return; }
+    if (!excelSelect.value) { msg.textContent = "Select an Excel file inside the ZIP."; return; }
+    msg.textContent = "Loading headers...";
+
+    try {
+      const form = new FormData();
+      form.append("zipfile_upload", zipInput.files[0]);
+      form.append("header_row", headerRowInput.value || "2");
+      form.append("excel_name", excelSelect.value);
+
+      const res = await fetch(`${API}/hstp/inspect`, { method:"POST", body: form });
+      const data = await res.json();
+
+      if (!res.ok) { msg.textContent = data.detail || "Failed to load headers."; return; }
+
+      headers = data.columns || [];
+      msg.textContent = `Loaded ${headers.length} headers.`;
+      refreshSelects();
+      if (mapBody.querySelectorAll("tr").length === 0) addRow();
+    } catch (e) {
+      console.error(e);
+      msg.textContent = "Request failed: " + (e?.message || e);
+    }
+  };
+
+  btnGenerate.onclick = async () => {
+    if (!zipInput.files.length) { msg.textContent = "Select a ZIP file first."; return; }
+    if (!excelSelect.value) { msg.textContent = "Select an Excel file inside the ZIP."; return; }
+    if (!zipPassword.value || zipPassword.value.trim().length < 4) { msg.textContent = "Enter ZIP password (min 4 chars)."; return; }
+
+    msg.textContent = "Generating password-protected ZIP...";
+
+    try {
+      const rows = Array.from(mapBody.querySelectorAll("tr"));
+      const output_columns = [];
+
+      rows.forEach(r => {
+        const inputs = r.querySelectorAll("input");
+        const selects = r.querySelectorAll("select");
+
+        const target = (inputs[0].value || "").trim();
+        const ruleType = selects[0].value;
+        const source = (selects[1].value || "").trim();
+        const condCol = (selects[2].value || "").trim();
+
+        const condValsRaw = (inputs[1].value || "").trim();
+        const constVal = (inputs[2].value || "");
+
+        if (!target) return;
+
+        if (ruleType === "constant") {
+          output_columns.push({ target, type: "constant", value: constVal });
+        } else if (ruleType === "copy") {
+          output_columns.push({ target, type: "copy", source });
+        } else {
+          const equals_any = condValsRaw.split(",").map(x => x.trim()).filter(x => x.length > 0);
+          output_columns.push({ target, type: "conditional_copy", source, condition: { column: condCol, equals_any } });
+        }
+      });
+
+      const mapping_config = JSON.stringify({ output_columns });
+
+      const form = new FormData();
+      form.append("zipfile_upload", zipInput.files[0]);
+      form.append("excel_name", excelSelect.value);
+      form.append("header_row", headerRowInput.value || "2");
+      form.append("fsp", fspSel.value || "");
+      form.append("output_name", outputName.value || "hstp_export");
+      form.append("zip_password", zipPassword.value);
+      form.append("mapping_config", mapping_config);
+
+      const res = await fetch(`${API}/hstp/generate`, { method:"POST", body: form });
+
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("application/json")) {
+        const data = await res.json();
+        msg.textContent = data.detail || "Generate failed.";
+        return;
+      }
+      if (!res.ok) { msg.textContent = "Generate failed."; return; }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = (outputName.value || "hstp_export") + ".zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url);
+      msg.textContent = "Done. Download started.";
+    } catch (e) {
+      console.error(e);
+      msg.textContent = "Request failed: " + (e?.message || e);
+    }
+  };
+</script>
+</body>
+</html>
